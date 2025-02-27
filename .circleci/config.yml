@@ -11,7 +11,7 @@ jobs:
       - image: cimg/ruby:3.2.5-browsers
         auth:
           username: mydockerhub-user
-          password: 
+          password: $DOCKERHUB_PASSWORD
       - image: redis:6.2.6
 
     steps:
