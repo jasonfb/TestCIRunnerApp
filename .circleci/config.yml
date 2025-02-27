@@ -1,0 +1,84 @@
+version: 2.1
+
+orbs:
+  ruby: circleci/ruby@1.0
+  node: circleci/node@2
+  browser-tools: circleci/browser-tools@1.4.4
+
+jobs:
+  build:
+    docker:
+      - image: cimg/ruby:3.2.5-browsers
+        auth:
+          username: mydockerhub-user
+          password: 
+      - image: redis:6.2.6
+
+    steps:
+      - checkout
+      - ruby/install-deps
+      - node/install-packages:
+          pkg-manager: yarn
+          cache-key: 'yarn.lock'
+      - run:
+          name: Build assets
+          command: bundle exec rails assets:precompile
+
+  test:
+    parallelism: 1
+    docker:
+      - image: cimg/ruby:3.2.5-browsers
+        auth:
+          username: mydockerhub-user
+          password: $DOCKERHUB_PASSWORD
+      - image: redis:6.2.6
+      - image: cimg/postgres:13.7
+        auth:
+          username: mydockerhub-user
+          password: $DOCKERHUB_PASSWORD
+        environment:
+          POSTGRES_USER: circleci-demo-ruby
+          POSTGRES_DB: test_ci_runner_app_test # match what you have in database.yml
+          POSTGRES_PASSWORD: ''
+
+    environment:
+      BUNDLE_JOBS: '3'
+      BUNDLE_RETRY: '3'
+      PGHOST: 127.0.0.1
+      PGUSER: circleci-demo-ruby
+      PGPASSWORD: ''
+      RAILS_ENV: test
+
+    steps:
+      - run: sudo apt-get update
+      - browser-tools/install-chromedriver
+      - checkout
+      - ruby/install-deps
+      - node/install-packages:
+          pkg-manager: yarn
+          cache-key: 'yarn.lock'
+      - run:
+          name: Build assets
+          command: bundle exec rails assets:precompile
+
+      - run:
+          name: Wait for DB
+          command: dockerize -wait tcp://localhost:5432 -timeout 1m
+      - run:
+          name: Load schema
+          command: bin/rails db:schema:load RAILS_ENV=test
+
+      - ruby/rspec-test
+
+      - store_artifacts:
+          path: tmp/capybara
+          destination: capybara_screenshots
+
+workflows:
+  version: 2
+  build_and_test:
+    jobs:
+      - build
+      - test:
+          requires:
+            - build
